@@ -61,25 +61,35 @@ class Router:
     """
     assert os.path.isfile(self._config_filename)
     print("Processing router's configuration file...")
+    # TODO: read and update neighbor link cost info, based upon any updated DV msg's from neighbors
     with open(self._config_filename, 'r') as f:
       line = f.readline()
       print("Raw line is: ", line)
       router_id = int(line.strip())
       print("Router id: ", router_id)
-      # Only set router_id when first initialize.
+
       if not self._router_id:
         self._socket.bind(('localhost', _ToPort(router_id)))
         self._router_id = router_id
-      # TODO: read and update neighbor link cost info, based upon any updated DV msg's from neighbors
-      # initialize fwd table based on config file
-      # this is where _forwarding_table is updated based on config file
-      # this is where you listen and accept for router neighbor updates and then update your config_file, which is the router's distance vector
-      # if there is an updated DV msg, update the config_file accordingly
-      # this is where the socket must listen for new messages and update its DV accordingly
-      # this is also where socket will send its DV to its neighbors
+
+      if not self.is_fwd_table_initialized():
+        self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
+
+      dist_vector_config = self.is_link_cost_neighbors_changed(f)
+      if dist_vector_config:
+        self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
+        pass
+
+      dist_vector = self.rcv_dist_vector()
+      if dist_vector:
+        self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector)))
 
 
   def is_link_cost_neighbors_changed(self, config_file):
+    """
+    :param config_file: A router's neighbor's and cost
+    :return: Returns a List of of Tuples (id_no, cost)
+    """
     pass
 
 
@@ -116,7 +126,9 @@ class Router:
   def send_dist_vector_to_neighbors(self, msg):
     """
     :param msg: Bytes object representation of a node's distance vector; the format of the message is
-    "Entry count, id_no, cost, ..., id_no, cost"
+    "Entry count, id_no, cost, ..., id_no, cost". Upon initialization, the router sends its complete
+    forwarding table. But later messages will only send updated entries of its forwarding table, not
+    the entire table.
     :return: None or Error
     """
     pass
@@ -136,6 +148,8 @@ class Router:
     :return: List of Tuples (id, next_hop, cost)
     """
     pass
+
+
 
 
 
