@@ -27,12 +27,11 @@ class Router:
     self._router_id = None
     # Socket used to send/recv update messages (using UDP).
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # TODO: Init a lock and a data structure to hold original config file
-
+    self._lock = threading.Lock()
+    self._curr_config_file = None
 
   def start(self):
     # Start a periodic closure to update config.
-    # TODO listen to port
     self._config_updater = util.PeriodicClosure(
         self.load_config, _CONFIG_UPDATE_INTERVAL_SEC)
     self._config_updater.start()
@@ -67,17 +66,17 @@ class Router:
       router_id = int(line.strip())
       print("Router id: ", router_id)
 
-      if not self._router_id:
+      if not self._router_id: # this only happens once when this function is called for the first time
         self._socket.bind(('localhost', _ToPort(router_id)))
         self._router_id = router_id
+        self._socket.listen(3)
 
       if not self.is_fwd_table_initialized():
         self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
-
-      dist_vector_config = self.is_link_cost_neighbors_changed(f)
-      if dist_vector_config:
-        self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
-        pass
+      else:
+        dist_vector_config = self.is_link_cost_neighbors_changed(f)
+        if dist_vector_config:
+          self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
 
       dist_vector = self.rcv_dist_vector()
       if dist_vector:
@@ -98,7 +97,7 @@ class Router:
 
   def initialize_fwd_table(self, config_file):
     """
-    Initializes the router's forwarding table based on config_file
+    Initializes the router's forwarding table based on config_file. Also initializes _curr_config_file
     :return: List of Tuples (id, next_hop, cost)
     """
     pass
@@ -137,6 +136,7 @@ class Router:
     :return: Bytes object representation of a neighbor's distance vector; the format of the message is
     "Entry count, id_no, cost, ..., id_no, cost". If no message received, receives -1
     """
+    # this is where the socket is called to accept a connection
     pass
 
 
