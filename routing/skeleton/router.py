@@ -27,16 +27,16 @@ class Router:
     self._router_id = None
     # Socket used to send/recv update messages (using UDP).
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # TODO: Init a lock and a data structure to hold original config file
 
 
   def start(self):
-    # should initilizaiton happen here
     # Start a periodic closure to update config.
+    # TODO listen to port
     self._config_updater = util.PeriodicClosure(
         self.load_config, _CONFIG_UPDATE_INTERVAL_SEC)
-    self._config_updater.start() # after 5 seconds, a thread will be created to run the load_config;
-    # then the thread is destroyed, after another 5 seconds, a new thread is created and load_config run again and so on
-    # TODO: init and start other threads.      What does this mean?
+    self._config_updater.start()
+    # TODO: init and start other threads.
     while True: pass
 
 
@@ -44,7 +44,6 @@ class Router:
     if self._config_updater:
       self._config_updater.stop()
     # TODO: clean up other threads.
-    # what does this mean???
 
 
   def load_config(self):
