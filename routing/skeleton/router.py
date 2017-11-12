@@ -3,6 +3,7 @@ import socket
 import table
 import threading
 import util
+import struct
 
 _CONFIG_UPDATE_INTERVAL_SEC = 5
 
@@ -134,7 +135,14 @@ class Router:
     :return: Bytes object representation of a forwarding table; the format of the message is
     "Entry count, id_no, cost, ..., id_no, cost"
     """
-    pass
+    msg = bytearray()
+    print("Converting forwarding table into a bytes object: ", fwd_table)
+    entry_count = len(fwd_table)
+    msg.extend(struct.pack("!h", entry_count))
+    for entry in fwd_table:
+      print("Adding destination: ", entry[0], " with cost of: ", entry[2])
+      msg.extend(struct.pack("!hh", int(entry_count[0]), int(entry_count[2])))
+    return msg
 
 
   def convert_bytes_msg_to_distance_vector(self, msg):
