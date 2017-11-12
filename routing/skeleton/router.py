@@ -4,6 +4,8 @@ import table
 import threading
 import util
 import struct
+import pprint
+
 
 _CONFIG_UPDATE_INTERVAL_SEC = 5
 
@@ -29,7 +31,7 @@ class Router:
     # Socket used to send/recv update messages (using UDP).
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self._lock = threading.Lock()
-    self._curr_config_file = []
+    self._curr_config_file = []  # a list of neighbors and cost ["2,4", "3,4"]
 
   def start(self):
     # Start a periodic closure to update config.
@@ -59,30 +61,42 @@ class Router:
     :return: None
     """
     assert os.path.isfile(self._config_filename)
+    print()
     print("Processing router's configuration file...")
     # TODO: read and update neighbor link cost info, based upon any updated DV msg's from neighbors
     with open(self._config_filename, 'r') as f:
       line = f.readline()
-      print("Raw line is: ", line)
       router_id = int(line.strip())
-      print("Router id: ", router_id)
+      print("Router id: ", router_id, '\n')
 
       if not self._router_id: # this only happens once when this function is called for the first time
         self._socket.bind(('localhost', _ToPort(router_id)))
         self._router_id = router_id
-        self._socket.listen(10)
 
       if not self.is_fwd_table_initialized():
-        self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
-      else:
-        dist_vector_config = self.is_link_cost_neighbors_changed(f)
-        if dist_vector_config:
-          self.send_dist_vector_to_neighbors(
-            self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
+        pp = pprint.PrettyPrinter(indent=4)
+        print("Initializing forwarding table..............", "\n")
+        fwd_tbl = self.initialize_fwd_table(f)
+        print("Fwd table has been initialized: ")
+        pp.pprint(fwd_tbl)
+        print()
 
-      dist_vector = self.rcv_dist_vector()
-      if dist_vector:
-        self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector)))
+        print("Converting table to bytes...............")
+        msg = self.convert_fwd_table_to_bytes_msg(fwd_tbl)
+        print("Fwd table has been converted to bytes msg", msg)
+
+        print("Sending bytes msg to neighbors......")
+
+        # self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
+      # else:
+      #   dist_vector_config = self.is_link_cost_neighbors_changed(f)
+      #   if dist_vector_config:
+      #     self.send_dist_vector_to_neighbors(
+      #       self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
+
+      # dist_vector = self.rcv_dist_vector()
+      # if dist_vector:
+      #   self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector)))
 
 
   def is_link_cost_neighbors_changed(self, config_file):
@@ -94,7 +108,7 @@ class Router:
 
 
   def is_fwd_table_initialized(self):
-    pass
+    return self._forwarding_table.size() > 0
 
 
   def initialize_fwd_table(self, config_file):
@@ -109,10 +123,11 @@ class Router:
 
     with self._lock:
       for line in self._curr_config_file:
-        list = line.split(',')
-        print("Adding neighbor ", list[0], " with cost of ", list[1])
-        snapshot.append((list[0], list[0], list[1]))
-    print("The forwarding table will be initialized to: ", snapshot)
+        print("Adding neighbor ", line[0], " with cost of ", line[1])
+        snapshot.append((int(line[0]), int(line[0]), int(line[1])))
+    print("The forwarding table will be initialized to: ")
+    pp = pprint.PrettyPrinter(indent=4)
+    pp.pprint(snapshot)
     self._forwarding_table.reset(snapshot)
     return snapshot
 
@@ -121,12 +136,14 @@ class Router:
     :param config_file: The config file for the given router
     :return: void
     """
+    print("Initializing current config file.....")
     with self._lock:
       for line in config_file:
-        line = line.strip('\n')
-        print("Adding line to _curr_config_file: ", line)
-        self._curr_config_file.append(line)
-      print("The current config file shows the following neighbor and cost: ", self._curr_config_file)
+        line = line.strip('\n').split(',')
+        tup = (int(line[0]), int(line[1]))
+        print("Adding line to _curr_config_file: ", tup)
+        self._curr_config_file.append(tup)
+      print("The current config file shows the following neighbor and cost: ", self._curr_config_file, "\n")
 
 
   def convert_fwd_table_to_bytes_msg(self, fwd_table):
@@ -138,10 +155,13 @@ class Router:
     msg = bytearray()
     print("Converting forwarding table into a bytes object: ", fwd_table)
     entry_count = len(fwd_table)
+    print("The number of entries is: ", entry_count)
     msg.extend(struct.pack("!h", entry_count))
     for entry in fwd_table:
       print("Adding destination: ", entry[0], " with cost of: ", entry[2])
-      msg.extend(struct.pack("!hh", int(entry_count[0]), int(entry_count[2])))
+      dest = entry[0]
+      cost = entry[2]
+      msg.extend(struct.pack("!hh", dest, cost))
     return msg
 
 
@@ -162,7 +182,18 @@ class Router:
     the entire table.
     :return: None or Error
     """
+    # TODO: implement
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    with self._lock:
+      for tup in self._curr_config_file:
+        tup
+      # get the socket for a neighbor (need the IP and the port for each neighbor)
+      # send a msg to each neighbor, which can be found in the current field
+    # close the socket
+    sock.shutdown()
+    sock.close()
     pass
+
 
   def rcv_dist_vector(self):
     """
