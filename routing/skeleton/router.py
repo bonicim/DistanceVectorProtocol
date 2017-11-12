@@ -33,7 +33,6 @@ class Router:
     self._lock = threading.Lock()
     self._curr_config_file = []  # a list of neighbors and cost [(2,4), (3,4)]
 
-
   def start(self):
     # Start a periodic closure to update config.
     self._config_updater = util.PeriodicClosure(
@@ -42,12 +41,10 @@ class Router:
     # TODO: init and start other threads.
     while True: pass
 
-
   def stop(self):
     if self._config_updater:
       self._config_updater.stop()
     # TODO: clean up other threads.
-
 
   def load_config(self):
     """
@@ -106,10 +103,21 @@ class Router:
             print("The forwarding table has not changed. No need to send dist vector to neighbors.")
         else:
           print("The config file has NOT changed; the number of changed neighbor costs is: ", len(dist_vector_config))
-      # dist_vector = self.rcv_dist_vector()
-      # if dist_vector:
-      #   self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector)))
 
+      print("Listening for new DV updates from neighbors.............")
+      # TODO: implement all functions used below
+      dist_vector = self.rcv_dist_vector()
+      if dist_vector:
+         print("Received update from neighbors")
+         print("Updating forwarding table with neighbor DV.")
+         fwd_table = self.update_fwd_table(dist_vector)
+
+         if len(fwd_table) > 0:
+           print("Forwarding table has changed.")
+           print("Converting forwarding table to bytes msg.")
+           msg = self.convert_fwd_table_to_bytes_msg(fwd_table)
+           print("Sending updated forwarding table to neighbors.")
+           self.send_dist_vector_to_neighbors(msg)
 
   def is_link_cost_neighbors_changed(self, config_file):
     """
@@ -132,10 +140,8 @@ class Router:
             ret.append((neighbor[0], config_file_dict[neighbor[0]]))
     return ret
 
-
   def is_fwd_table_initialized(self):
     return self._forwarding_table.size() > 0
-
 
   def initialize_fwd_table(self, config_file):
     """
@@ -171,7 +177,6 @@ class Router:
         self._curr_config_file.append(tup)
       print("The current config file shows the following neighbor and cost: ", self._curr_config_file, "\n")
 
-
   def convert_fwd_table_to_bytes_msg(self, fwd_table):
     """
     :param fwd_table: List of Tuples (id, next_hop, cost)
@@ -190,7 +195,6 @@ class Router:
       msg.extend(struct.pack("!hh", dest, cost))
     return msg
 
-
   def convert_bytes_msg_to_distance_vector(self, msg):
     """
     :param msg: Bytes object representation of a neighbor's distance vector; the format of the message is
@@ -198,7 +202,6 @@ class Router:
     :return: List of Tuples (id_no, cost)
     """
     pass
-
 
   def send_dist_vector_to_neighbors(self, msg):
     """
@@ -218,15 +221,14 @@ class Router:
         print("Send bytes object with size of: ", bytes_sent)
     sock.close()
 
-
   def rcv_dist_vector(self):
     """
     :return: Bytes object representation of a neighbor's distance vector; the format of the message is
     "Entry count, id_no, cost, ..., id_no, cost". If no message received, receives -1
     """
     # this is where the socket is called to accept a connection
+    # TODO
     pass
-
 
   def update_fwd_table(self, dist_vector):
     """
