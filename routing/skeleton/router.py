@@ -31,7 +31,8 @@ class Router:
     # Socket used to send/recv update messages (using UDP).
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self._lock = threading.Lock()
-    self._curr_config_file = []  # a list of neighbors and cost ["2,4", "3,4"]
+    self._curr_config_file = []  # a list of neighbors and cost [(2,4), (3,4)]
+
 
   def start(self):
     # Start a periodic closure to update config.
@@ -83,17 +84,28 @@ class Router:
 
         print("Converting table to bytes...............")
         msg = self.convert_fwd_table_to_bytes_msg(fwd_tbl)
-        print("Fwd table has been converted to bytes msg", msg)
+        print("Fwd table has been converted to bytes msg: ")
+        print(msg, '\n')
 
         print("Sending bytes msg to neighbors......")
-
+        self.send_dist_vector_to_neighbors(msg)
         # self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
-      # else:
-      #   dist_vector_config = self.is_link_cost_neighbors_changed(f)
-      #   if dist_vector_config:
-      #     self.send_dist_vector_to_neighbors(
-      #       self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
-
+      else:
+        print("Checking if config file has changed..................")
+        dist_vector_config = self.is_link_cost_neighbors_changed(f)
+        if len(dist_vector_config) > 0:
+          print("Link cost to neighbors have changed. Updating forwarding table......", '\n')
+          ret = self.update_fwd_table(dist_vector_config)
+          if len(ret) > 0:
+            print("Forwarding table has changed as result of new link costs.")
+            print("Converting updated table entries to bytes msg......")
+            msg = self.convert_fwd_table_to_bytes_msg(ret)
+            print("Sending updated table entries to neighbors: ")
+            self.send_dist_vector_to_neighbors(msg)
+          else:
+            print("The forwarding table has not changed. No need to send dist vector to neighbors.")
+        else:
+          print("The config file has NOT changed; the number of changed neighbor costs is: ", len(dist_vector_config))
       # dist_vector = self.rcv_dist_vector()
       # if dist_vector:
       #   self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector)))
@@ -104,7 +116,21 @@ class Router:
     :param config_file: A router's neighbor's and cost
     :return: Returns a List of of Tuples (id_no, cost)
     """
-    pass
+    config_file_dict = {}
+    for line in config_file:
+      line = line.strip("\n")
+      list_line = line.split(",")
+      config_file_dict[int(list_line[0])] = int(list_line[1])
+    ret = []
+    with self._lock:
+      for neighbor in self._curr_config_file:
+        print("Checking cost of neighbor: ", neighbor[0])
+        if neighbor[0] in config_file_dict:
+          delta = neighbor[1] - config_file_dict[neighbor[0]]
+          print("Cost delta is: ", delta)
+          if delta > 0:
+            ret.append((neighbor[0], config_file_dict[neighbor[0]]))
+    return ret
 
 
   def is_fwd_table_initialized(self):
@@ -182,17 +208,15 @@ class Router:
     the entire table.
     :return: None or Error
     """
-    # TODO: implement
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     with self._lock:
       for tup in self._curr_config_file:
-        tup
-      # get the socket for a neighbor (need the IP and the port for each neighbor)
-      # send a msg to each neighbor, which can be found in the current field
-    # close the socket
-    sock.shutdown()
+        print("Sending vector to neighbor: ", tup[0])
+        port = _ToPort(tup[0])
+        print("At port: ", port)
+        bytes_sent = sock.sendto(msg, ('localhost', port))
+        print("Send bytes object with size of: ", bytes_sent)
     sock.close()
-    pass
 
 
   def rcv_dist_vector(self):
@@ -206,11 +230,12 @@ class Router:
 
   def update_fwd_table(self, dist_vector):
     """
-    Updates the router's forwarding table based on some distance vector either from config_file or neighbor
+    Updates the router's forwarding table based on some distance vector either from config_file or neighbor.
+    Returns a list of entries that were changed; otherwise None
     :param dist_vector: List of Tuples (id_no, cost)
     :return: List of Tuples (id, next_hop, cost)
     """
-    pass
+    return 0
 
 
 
