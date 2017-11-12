@@ -28,7 +28,7 @@ class Router:
     # Socket used to send/recv update messages (using UDP).
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self._lock = threading.Lock()
-    self._curr_config_file = None
+    self._curr_config_file = []
 
   def start(self):
     # Start a periodic closure to update config.
@@ -69,14 +69,15 @@ class Router:
       if not self._router_id: # this only happens once when this function is called for the first time
         self._socket.bind(('localhost', _ToPort(router_id)))
         self._router_id = router_id
-        self._socket.listen(3)
+        self._socket.listen(10)
 
       if not self.is_fwd_table_initialized():
         self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
       else:
         dist_vector_config = self.is_link_cost_neighbors_changed(f)
         if dist_vector_config:
-          self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
+          self.send_dist_vector_to_neighbors(
+            self.convert_fwd_table_to_bytes_msg(self.update_fwd_table(dist_vector_config)))
 
       dist_vector = self.rcv_dist_vector()
       if dist_vector:
@@ -97,10 +98,34 @@ class Router:
 
   def initialize_fwd_table(self, config_file):
     """
-    Initializes the router's forwarding table based on config_file. Also initializes _curr_config_file
+    Initializes the router's forwarding table based on config_file. Also gives _curr_config_file data.
     :return: List of Tuples (id, next_hop, cost)
     """
-    pass
+    self.initialize_curr_config_file(config_file)
+    snapshot = self._forwarding_table.snapshot()
+    print("This is the number of entries in the forwarding table (should be empty): ", len(snapshot))
+    snapshot.append((self._router_id, self._router_id, 0)) # add source node to forwarding table
+
+    with self._lock:
+      for line in self._curr_config_file:
+        list = line.split(',')
+        print("Adding neighbor ", list[0], " with cost of ", list[1])
+        snapshot.append((list[0], list[0], list[1]))
+    print("The forwarding table will be initialized to: ", snapshot)
+    self._forwarding_table.reset(snapshot)
+    return snapshot
+
+  def initialize_curr_config_file(self, config_file):
+    """
+    :param config_file: The config file for the given router
+    :return: void
+    """
+    with self._lock:
+      for line in config_file:
+        line = line.strip('\n')
+        print("Adding line to _curr_config_file: ", line)
+        self._curr_config_file.append(line)
+      print("The current config file shows the following neighbor and cost: ", self._curr_config_file)
 
 
   def convert_fwd_table_to_bytes_msg(self, fwd_table):
