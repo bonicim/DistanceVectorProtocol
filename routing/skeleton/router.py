@@ -62,6 +62,7 @@ class Router:
     print()
     print("Processing router's configuration file...")
     # TODO: read and update neighbor link cost info, based upon any updated DV msg's from neighbors
+    # TODO: need to send periodic updates of table because it's sent over UDP
     with open(self._config_filename, 'r') as f:
       line = f.readline()
       router_id = int(line.strip())
@@ -106,18 +107,25 @@ class Router:
 
       print("Listening for new DV updates from neighbors.............")
       # TODO: implement all functions used below
+      # checking for any update distance vectors from neighbors
+      # get the router's fwd table
+      # update if necessary
+      # send the table to the neighbors
       dist_vector = self.rcv_dist_vector()
       if dist_vector:
          print("Received update from neighbors")
          print("Updating forwarding table with neighbor DV.")
-         fwd_table = self.update_fwd_table(dist_vector)
+         self.update_fwd_table(dist_vector)
+         print("Forwarding table has been updated.")
+      else:
+         print("Forwarding table has NOT been updated because router has not received any DV msg's from neighbors.")
 
-         if len(fwd_table) > 0:
-           print("Forwarding table has changed.")
-           print("Converting forwarding table to bytes msg.")
-           msg = self.convert_fwd_table_to_bytes_msg(fwd_table)
-           print("Sending updated forwarding table to neighbors.")
-           self.send_dist_vector_to_neighbors(msg)
+      print()
+      print("Converting forwarding table to bytes msg............")
+      msg = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
+      print("Sending forwarding table to neighbors.........")
+      self.send_dist_vector_to_neighbors(msg)
+
 
   def is_link_cost_neighbors_changed(self, config_file):
     """
@@ -177,18 +185,18 @@ class Router:
         self._curr_config_file.append(tup)
       print("The current config file shows the following neighbor and cost: ", self._curr_config_file, "\n")
 
-  def convert_fwd_table_to_bytes_msg(self, fwd_table):
+  def convert_fwd_table_to_bytes_msg(self, snapshot):
     """
-    :param fwd_table: List of Tuples (id, next_hop, cost)
+    :param snapshot: List of Tuples (id, next_hop, cost)
     :return: Bytes object representation of a forwarding table; the format of the message is
     "Entry count, id_no, cost, ..., id_no, cost"
     """
     msg = bytearray()
-    print("Converting forwarding table into a bytes object: ", fwd_table)
-    entry_count = len(fwd_table)
+    print("Converting forwarding table into a bytes object: ", snapshot)
+    entry_count = len(snapshot)
     print("The number of entries is: ", entry_count)
     msg.extend(struct.pack("!h", entry_count))
-    for entry in fwd_table:
+    for entry in snapshot:
       print("Adding destination: ", entry[0], " with cost of: ", entry[2])
       dest = entry[0]
       cost = entry[2]
