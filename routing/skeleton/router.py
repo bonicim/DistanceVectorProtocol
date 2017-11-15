@@ -106,11 +106,16 @@ class Router:
 
       print("Listening for new DV updates from neighbors.............")
       # TODO: implement all functions used below
-      dist_vector = self.rcv_dist_vector()
-      if dist_vector:
-         print("Received update from neighbors", '\n')
+      msg = self.rcv_dist_vector()
+      if msg:
+         print("Received update msg from neighbors", '\n')
+
+         print("Converting msg into List of distance vector Tuples....")
+         dist_vector = self.convert_bytes_msg_to_distance_vector(msg)
+         print("Msg has been converted to List of Tuples: ", dist_vector, '\n')
+
          print("Updating forwarding table with neighbor DV.")
-         self.update_fwd_table(dist_vector)
+         self.update_fwd_table(dist_vector)  #TODO implement helper methods
          print("Forwarding table has been updated.", '\n')
       else:
          print("Forwarding table has NOT been updated because router has not received any DV msg's from neighbors.", '\n')
@@ -204,6 +209,7 @@ class Router:
     "Entry count, id_no, cost, ..., id_no, cost"
     :return: List of Tuples (id_no, cost)
     """
+    # TODO: implement this
     pass
 
   def send_dist_vector_to_neighbors(self, msg):
@@ -266,7 +272,7 @@ class Router:
 
     self.overwrite_fwd_tbl(acc_fwd_tbl)
     return self._forwarding_table.__str__()
-  
+
   def get_source_node(self, dist_vector):
     """
 
