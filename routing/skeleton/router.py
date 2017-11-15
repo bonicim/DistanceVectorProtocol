@@ -110,7 +110,7 @@ class Router:
       if dist_vector:
          print("Received update from neighbors", '\n')
          print("Updating forwarding table with neighbor DV.")
-         # self.update_fwd_table(dist_vector)
+         self.update_fwd_table(dist_vector)
          print("Forwarding table has been updated.", '\n')
       else:
          print("Forwarding table has NOT been updated because router has not received any DV msg's from neighbors.", '\n')
@@ -248,10 +248,87 @@ class Router:
     :param dist_vector: List of Tuples (id_no, cost)
     :return: List of Tuples (id, next_hop, cost)
     """
-    return 0
+    # TODO: add print statements
+    # get the neighbor node
+    neighbor = self.get_source_node(dist_vector)
+    acc_fwd_tbl = []
+    fwd_tbl = self._forwarding_table.snapshot()
 
+    for dv_entry in dist_vector:
+      fwd_tbl_entry = self.is_dest_in_fwd_tbl(dv_entry, fwd_tbl)
+      if fwd_tbl_entry:
+        updated_entry = self.is_cost_lt_fwd_tbl_entry(dv_entry,fwd_tbl_entry, neighbor)
+        if updated_entry:
+          updated_entry = self.calc_min_cost(neighbor, dv_entry, fwd_tbl)
+          acc_fwd_tbl = self.update_fwd_tbl_with_new_entry(updated_entry, acc_fwd_tbl)
+      else:
+        acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(dv_entry, neighbor, acc_fwd_tbl)
 
+    self.overwrite_fwd_tbl(acc_fwd_tbl)
+    return self._forwarding_table.__str__()
+  
+  def get_source_node(self, dist_vector):
+    """
 
+    :param dist_vector:
+    :return:
+    """
+    pass
 
+  # TODO implement all helper methods
+  def is_dest_in_fwd_tbl(self, dv_entry, fwd_tbl):
+    """
 
+    :param dv_entry:
+    :param fwd_tbl:
+    :return: None or a fwd_tbl_entry, which is a Tuple (dest, hop, cost)
+    """
+    pass
+
+  def is_cost_lt_fwd_tbl_entry(self, dv_entry, fwd_tbl_entry, neighbor):
+    """
+
+    :param dv_entry:
+    :param fwd_tbl_entry:
+    :param neighbor
+    :return:
+    """
+    pass
+
+  def calc_min_cost(self, neighbor, dv_entry, fwd_tbl):
+    """
+
+    :param neighbor:
+    :param dv_entry:
+    :param fwd_tbl:
+    :return: an updated fwd_tbl_entry, which is a Tuple (dest, next hop, cost)
+    """
+    pass
+
+  def update_fwd_tbl_with_new_entry(self, updated_entry, acc_fwd_tbl):
+    """
+    Appends updated entry to acc_fwd_tbl
+    :param updated_entry:
+    :param acc_fwd_tbl:
+    :return: an updated acc_fwd_tbl, which is a List of Tuples (dest, next hop, cost)
+    """
+    pass
+
+  def add_new_entry_to_fwd_tbl(self, dv_entry, neighbor, acc_fwd_tbl):
+    """
+
+    :param dv_entry:
+    :param neighbor:
+    :param acc_fwd_tbl:
+    :return: an updated acc_fwd_tbl, which is a List of Tuples (dest, next hop, cost)
+    """
+    pass
+
+  def overwrite_fwd_tbl(self, acc_fwd_tbl):
+    """
+
+    :param acc_fwd_tbl:
+    :return: None
+    """
+    pass
 
