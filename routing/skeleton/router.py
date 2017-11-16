@@ -68,44 +68,50 @@ class Router:
     """
     assert os.path.isfile(self._config_filename)
     print("Processing router's configuration file...")
-    # TODO: read and update neighbor link cost info, based upon any updated DV msg's from neighbors
     with open(self._config_filename, 'r') as f:
-      line = f.readline()
-      router_id = int(line.strip())
+      router_id = int(f.readline().strip())
       print("Router id: ", router_id, '\n')
-
       self.init_router_id(router_id)
+      self.init_fwd_tbl(f)
+    self.check_for_msg()
+    self.send_periodic_msg()
 
-      if not self.is_fwd_table_initialized():
-        print("Initializing forwarding table..............", '\n')
-        self.initialize_fwd_table(f)
+  def send_periodic_msg(self):
+    self.send_update_msg()
 
-        print("Converting table to bytes...............")
-        dist_vector = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
+  def check_for_msg(self):
+    dist_vector = self.receive_update_msg()
+    self.update_fwd_table(dist_vector)
 
-        print("Sending bytes msg to neighbors......")
-        self.send_dist_vector_to_neighbors(dist_vector)
-      else:
-        print("Checking if config file has changed..................")
-        dist_vector_config = self.is_link_cost_neighbors_changed(f)
-        if len(dist_vector_config) > 0:
-          print("Link cost to neighbors have changed. Updating forwarding table......")
-          ret = self.update_fwd_table(dist_vector_config)
-          if len(ret) > 0:
-            print("Forwarding table has changed as result of new link costs.")
-            print("Converting updated table entries to bytes msg......")
-            dist_vector = self.convert_fwd_table_to_bytes_msg(ret)
-            print()
-            print("Sending updated table entries to neighbors.... ")
-            self.send_dist_vector_to_neighbors(dist_vector)
-          else:
-            print("The forwarding table has not changed. No need to send dist vector to neighbors.")
-        else:
-          print("The config file has NOT changed; the number of changed neighbor costs is: ", len(dist_vector_config), '\n')
+  def init_fwd_tbl(self, f):
+    if not self.is_fwd_table_initialized():
+      print("Initializing forwarding table..............", '\n')
+      self.initialize_fwd_table(f)
+      print("Converting table to bytes...............")
+      dist_vector = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
+      print("Sending bytes msg to neighbors......")
+      self.send_dist_vector_to_neighbors(dist_vector)
+    else:
+      print("Checking if link cost of neighbors has changed (DOES NOT CONSIDER NEW NEIGHBORS..................")
+      self.check_link_cost_change(f)  # will send updated msg to neighbors if change exists
 
-      dist_vector = self.receive_update_msg()
-      # self.update_fwd_table(dist_vector)
-      self.send_update_msg()
+  def check_link_cost_change(self, f):
+    dist_vector_config = self.is_link_cost_neighbors_changed(f)
+    if len(dist_vector_config) > 0:
+      print("Link cost to neighbors have changed. Updating forwarding table......")
+      self.update_fwd_table(dist_vector_config)
+      print("Also updating curr_config_file")
+      self.update_curr_config(dist_vector_config)
+      print("Converting updated table entries to bytes msg......")
+      msg_dist_vector = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
+      print("Sending updated table entries to neighbors.... ")
+      self.send_dist_vector_to_neighbors(msg_dist_vector)
+    else:
+      print("The config file has NOT changed; the number of changed neighbor costs is: ", len(dist_vector_config), '\n')
+
+  def update_curr_config(self, list_new_link_cost):
+    # TODO: update the curr config with new link cost based on list_neighbor_cost_change
+    pass
 
   def init_router_id(self, router_id):
     if not self._router_id: # this only happens once when this function is called for the first time
@@ -133,6 +139,7 @@ class Router:
 
   def is_link_cost_neighbors_changed(self, config_file):
     """
+    Note: Does not consider new neigbors that were added to the config file
     :param config_file: A router's neighbor's and cost
     :return: Returns a List of of Tuples (id_no, cost)
     """
@@ -141,16 +148,16 @@ class Router:
       line = line.strip("\n")
       list_line = line.split(",")
       config_file_dict[int(list_line[0])] = int(list_line[1])
-    ret = []
+    list_neighbors_cost_change = []
     with self._lock:
       for neighbor in self._curr_config_file:
         print("Checking cost of neighbor: ", neighbor[0])
         if neighbor[0] in config_file_dict:
-          delta = neighbor[1] - config_file_dict[neighbor[0]]
-          print("Cost delta is: ", delta)
-          if delta > 0:
-            ret.append((neighbor[0], config_file_dict[neighbor[0]]))
-    return ret
+          if neighbor[1] != config_file_dict[neighbor[0]]:
+            print("Link cost of neighbor ", neighbor[0], " has changed to: ", config_file_dict[neighbor[0]])
+
+            list_neighbors_cost_change.append((neighbor[0], config_file_dict[neighbor[0]]))
+    return list_neighbors_cost_change
 
   def is_fwd_table_initialized(self):
     return self._forwarding_table.size() > 0
