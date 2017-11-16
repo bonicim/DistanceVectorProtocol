@@ -273,31 +273,47 @@ class Router:
     :return: List of Tuples (id, next_hop, cost)
     """
     # TODO: add print statements
-    # get the neighbor node
     print("Updating forwarding table with neighbor DV.........")
-    print("Forwarding table has been updated.", '\n')
-    neighbor = self.get_source_node(dist_vector)
     acc_fwd_tbl = []
     fwd_tbl = self._forwarding_table.snapshot()
-
-    for dv_entry in dist_vector:
-      fwd_tbl_entry = self.is_dest_in_fwd_tbl(dv_entry, fwd_tbl)
-      if fwd_tbl_entry:
-        updated_entry = self.is_cost_lt_fwd_tbl_entry(dv_entry,fwd_tbl_entry, neighbor)
+    print("Current Fwd Table: ", fwd_tbl)
+    neighbor = self.get_source_node(dist_vector)
+    if neighbor:
+      print("We have a distance vector from neighbor: ", neighbor)
+      for dv_entry in dist_vector:
+        fwd_tbl_entry = self.is_dest_in_fwd_tbl(dv_entry, fwd_tbl)
+        if fwd_tbl_entry:
+          updated_entry = self.is_cost_lt_fwd_tbl_entry(dv_entry,fwd_tbl_entry, neighbor)
+          if updated_entry:
+            updated_entry = self.calc_min_cost(neighbor, dv_entry, fwd_tbl)
+            acc_fwd_tbl = self.update_fwd_tbl_with_new_entry(updated_entry, acc_fwd_tbl)
+        else:
+          acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(dv_entry, neighbor, acc_fwd_tbl)
+    else:
+      for fwd_tbl_entry in fwd_tbl:
+        updated_entry = self.is_dest_in_dist_vector(fwd_tbl_entry, dist_vector)
         if updated_entry:
-          updated_entry = self.calc_min_cost(neighbor, dv_entry, fwd_tbl)
-          acc_fwd_tbl = self.update_fwd_tbl_with_new_entry(updated_entry, acc_fwd_tbl)
-      else:
-        acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(dv_entry, neighbor, acc_fwd_tbl)
+          acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(updated_entry, updated_entry[0], acc_fwd_tbl)
+        else:
+          acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(fwd_tbl_entry, fwd_tbl_entry[1], acc_fwd_tbl)
 
     self.overwrite_fwd_tbl(acc_fwd_tbl)
+    print("Forwarding table has been updated.", '\n')
     return self._forwarding_table.__str__()
+
+  def is_dest_in_dist_vector(fwd_tbl_entry, dist_vector):
+    """
+
+    :param dist_vector:
+    :return: The entry in dist_vector if found or None
+    """
+    pass
 
   def get_source_node(self, dist_vector):
     """
 
     :param dist_vector:
-    :return:
+    :return: An integer representing a source node OR none
     """
     pass
 
