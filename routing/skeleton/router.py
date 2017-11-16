@@ -74,25 +74,17 @@ class Router:
       router_id = int(line.strip())
       print("Router id: ", router_id, '\n')
 
-      if not self._router_id: # this only happens once when this function is called for the first time
-        print("Binding socket to localhost and port: ", _ToPort(router_id), "..............", "\n")
-        self._socket.bind(('localhost', _ToPort(router_id)))
-        self._router_id = router_id
+      self.init_router_id(router_id)
 
       if not self.is_fwd_table_initialized():
         print("Initializing forwarding table..............", '\n')
-        fwd_tbl = self.initialize_fwd_table(f)
-        if fwd_tbl:
-          print("Fwd table has been initialized: ", '\n')
+        self.initialize_fwd_table(f)
 
         print("Converting table to bytes...............")
-        dist_vector = self.convert_fwd_table_to_bytes_msg(fwd_tbl)
-        if dist_vector:
-          print("Fwd table has been converted to bytes msg: ", dist_vector, '\n')
+        dist_vector = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
 
         print("Sending bytes msg to neighbors......")
         self.send_dist_vector_to_neighbors(dist_vector)
-        # self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
       else:
         print("Checking if config file has changed..................")
         dist_vector_config = self.is_link_cost_neighbors_changed(f)
@@ -115,6 +107,12 @@ class Router:
       # self.update_fwd_table(dist_vector)
       self.send_update_msg()
 
+  def init_router_id(self, router_id):
+    if not self._router_id: # this only happens once when this function is called for the first time
+      print("Binding socket to localhost and port: ", _ToPort(router_id), "..............", "\n")
+      self._socket.bind(('localhost', _ToPort(router_id)))
+      self._router_id = router_id
+
   def receive_update_msg(self):
     print("Listening for new DV updates from neighbors.............")
     dist_vector = self.rcv_dist_vector()
@@ -123,7 +121,6 @@ class Router:
       return dist_vector
     else:
       print("Fwd tbl NOT updated because router has not received any DV msg's from neighbors.", '\n')
-
 
   def send_update_msg(self):
     print("Converting forwarding table to bytes msg............", '\n')
@@ -177,7 +174,8 @@ class Router:
         snapshot.append((int(line[0]), int(line[0]), int(line[1])))
     print("The forwarding table will be initialized to: ", snapshot)
     self._forwarding_table.reset(snapshot)
-    return snapshot
+    if snapshot:
+      print("Fwd table has been initialized: ", '\n')
 
   def initialize_curr_config_file(self, config_file):
     """
@@ -210,6 +208,8 @@ class Router:
       dest = entry[0]
       cost = entry[2]
       msg.extend(struct.pack("!hh", dest, cost))
+    if msg:
+      print("Fwd table has been converted to bytes msg: ", msg, '\n')
     return msg
 
   def send_dist_vector_to_neighbors(self, msg):
