@@ -12,6 +12,11 @@ _CONFIG_UPDATE_INTERVAL_SEC = 5
 
 _MAX_UPDATE_MSG_SIZE = 1024
 _BASE_ID = 8000
+_BYTES_PER_ENTRY = 4
+_PADDING = 1
+_START_INDEX = 2
+_MOVE_TWO_BYTES = 2
+_MOVE_FOUR_BYTES = 4
 
 def _ToPort(router_id):
   return _BASE_ID + router_id
@@ -19,6 +24,8 @@ def _ToPort(router_id):
 def _ToRouterId(port):
   return port - _BASE_ID
 
+def _ToStop(entry_count):
+  return entry_count * _BYTES_PER_ENTRY + _PADDING
 
 class Router:
   def __init__(self, config_filename):
@@ -79,12 +86,12 @@ class Router:
           print("Fwd table has been initialized: ", '\n')
 
         print("Converting table to bytes...............")
-        msg = self.convert_fwd_table_to_bytes_msg(fwd_tbl)
-        if msg:
-          print("Fwd table has been converted to bytes msg: ", msg, '\n')
+        dist_vector = self.convert_fwd_table_to_bytes_msg(fwd_tbl)
+        if dist_vector:
+          print("Fwd table has been converted to bytes msg: ", dist_vector, '\n')
 
         print("Sending bytes msg to neighbors......")
-        self.send_dist_vector_to_neighbors(msg)
+        self.send_dist_vector_to_neighbors(dist_vector)
         # self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg(self.initialize_fwd_table(f)))
       else:
         print("Checking if config file has changed..................")
@@ -95,36 +102,37 @@ class Router:
           if len(ret) > 0:
             print("Forwarding table has changed as result of new link costs.")
             print("Converting updated table entries to bytes msg......")
-            msg = self.convert_fwd_table_to_bytes_msg(ret)
+            dist_vector = self.convert_fwd_table_to_bytes_msg(ret)
             print()
             print("Sending updated table entries to neighbors.... ")
-            self.send_dist_vector_to_neighbors(msg)
+            self.send_dist_vector_to_neighbors(dist_vector)
           else:
             print("The forwarding table has not changed. No need to send dist vector to neighbors.")
         else:
           print("The config file has NOT changed; the number of changed neighbor costs is: ", len(dist_vector_config), '\n')
 
-      print("Listening for new DV updates from neighbors.............")
-      # TODO: implement all functions used below
-      msg = self.rcv_dist_vector()
-      if msg:
-         print("Received update msg from neighbors", '\n')
+      dist_vector = self.receive_update_msg()
+      # self.update_fwd_table(dist_vector)
+      self.send_update_msg()
 
-         print("Converting msg into List of distance vector Tuples....")
-         dist_vector = self.convert_bytes_msg_to_distance_vector(msg)
-         print("Msg has been converted to List of Tuples: ", dist_vector, '\n')
+  def receive_update_msg(self):
+    print("Listening for new DV updates from neighbors.............")
+    dist_vector = self.rcv_dist_vector()
+    if dist_vector:
+      print("Converted msg into DV List: ", dist_vector, '\n')
+      return dist_vector
+    else:
+      print("Fwd tbl NOT updated because router has not received any DV msg's from neighbors.", '\n')
 
-         print("Updating forwarding table with neighbor DV.")
-         self.update_fwd_table(dist_vector)  #TODO implement helper methods
-         print("Forwarding table has been updated.", '\n')
-      else:
-         print("Forwarding table has NOT been updated because router has not received any DV msg's from neighbors.", '\n')
 
-      print("Converting forwarding table to bytes msg............", '\n')
-      msg = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
-      print("Sending forwarding table to neighbors.........", '\n', '\n')
+  def send_update_msg(self):
+    print("Converting forwarding table to bytes msg............", '\n')
+    msg = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
+    if msg:
+      print("Conversion succeeded; sending forwarding table to neighbors.........", '\n')
       self.send_dist_vector_to_neighbors(msg)
-
+    else:
+      print("We should never see this output. No message sent. The program must send periodic messages.")
 
   def is_link_cost_neighbors_changed(self, config_file):
     """
@@ -191,6 +199,7 @@ class Router:
     :return: Bytes object representation of a forwarding table; the format of the message is
     "Entry count, id_no, cost, ..., id_no, cost"
     """
+    # TODO: ensure table is max 1024
     msg = bytearray()
     print("Converting forwarding table into a bytes object: ", snapshot)
     entry_count = len(snapshot)
@@ -202,15 +211,6 @@ class Router:
       cost = entry[2]
       msg.extend(struct.pack("!hh", dest, cost))
     return msg
-
-  def convert_bytes_msg_to_distance_vector(self, msg):
-    """
-    :param msg: Bytes object representation of a neighbor's distance vector; the format of the message is
-    "Entry count, id_no, cost, ..., id_no, cost"
-    :return: List of Tuples (id_no, cost)
-    """
-    # TODO: implement this
-    pass
 
   def send_dist_vector_to_neighbors(self, msg):
     """
@@ -233,19 +233,30 @@ class Router:
 
   def rcv_dist_vector(self):
     """
-    :return: Bytes object representation of a neighbor's distance vector; the format of the message is
-    "Entry count, id_no, cost, ..., id_no, cost". If no message received, receives -1
+    :return: List of Tuples (id_no, cost) from a neighbor; if no message received, return None.
     """
-    # this is where the socket is called to accept a connection
-    # TODO
     read, write, err = select.select([self._socket], [], [], 3)
     if read:
       msg, addr = read[0].recvfrom(_MAX_UPDATE_MSG_SIZE)
       print("Received msg:",  msg)
-      print("At addr: ", addr)
-      return msg
+      entry_count = int.from_bytes(msg[0:_START_INDEX], byteorder='big')
+      dist_vector = []
+      for index in range(_START_INDEX, _ToStop(entry_count), _BYTES_PER_ENTRY):
+        dest_cost = self.get_dest_cost(msg, index)
+        dist_vector.append(dest_cost)
+      return dist_vector
     else:
       return None
+
+  def get_dest_cost(self, msg, index):
+    """
+    Decodes the destination and cost of a distance vector entry from a router's update message
+    :param msg: the UDP message (byte object) sent by a router
+    :param index: the current index of the msg
+    :return: Tuple in the form of (dest, cost)
+    """
+    return (int.from_bytes(msg[index:index + _MOVE_TWO_BYTES], byteorder='big'),
+            int.from_bytes(msg[index + _MOVE_TWO_BYTES:index + _MOVE_FOUR_BYTES], byteorder='big'))
 
   def update_fwd_table(self, dist_vector):
     """
@@ -256,6 +267,8 @@ class Router:
     """
     # TODO: add print statements
     # get the neighbor node
+    print("Updating forwarding table with neighbor DV.........")
+    print("Forwarding table has been updated.", '\n')
     neighbor = self.get_source_node(dist_vector)
     acc_fwd_tbl = []
     fwd_tbl = self._forwarding_table.snapshot()
