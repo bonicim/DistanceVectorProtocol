@@ -123,23 +123,24 @@ class Router:
     print("Listening for new DV updates from neighbors.............")
     dist_vector = self.rcv_dist_vector()
     if dist_vector:
-      print("Converted msg into DV List: ", dist_vector, '\n')
+      print("Converted msg into DV List: ", dist_vector)
       return dist_vector
     else:
       print("Fwd tbl NOT updated because router has not received any DV msg's from neighbors.", '\n')
+      return None
 
   def send_update_msg(self):
-    print("Converting forwarding table to bytes msg............", '\n')
+    print("Converting forwarding table to bytes msg............")
     msg = self.convert_fwd_table_to_bytes_msg(self._forwarding_table.snapshot())
     if msg:
-      print("Conversion succeeded; sending forwarding table to neighbors.........", '\n')
+      print("Conversion succeeded; sending forwarding table to neighbors.........")
       self.send_dist_vector_to_neighbors(msg)
     else:
       print("We should never see this output. No message sent. The program must send periodic messages.")
 
   def is_link_cost_neighbors_changed(self, config_file):
     """
-    Note: Does not consider new neigbors that were added to the config file
+    Note: Does not consider new neighbors that were added to the config file
     :param config_file: A router's neighbor's and cost
     :return: Returns a List of of Tuples (id_no, cost)
     """
@@ -155,7 +156,6 @@ class Router:
         if neighbor[0] in config_file_dict:
           if neighbor[1] != config_file_dict[neighbor[0]]:
             print("Link cost of neighbor ", neighbor[0], " has changed to: ", config_file_dict[neighbor[0]])
-
             list_neighbors_cost_change.append((neighbor[0], config_file_dict[neighbor[0]]))
     return list_neighbors_cost_change
 
@@ -216,7 +216,7 @@ class Router:
       cost = entry[2]
       msg.extend(struct.pack("!hh", dest, cost))
     if msg:
-      print("Fwd table has been converted to bytes msg: ", msg, '\n')
+      print("Fwd table has been converted to bytes msg: ", msg)
     return msg
 
   def send_dist_vector_to_neighbors(self, msg):
@@ -230,7 +230,7 @@ class Router:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     with self._lock:
       for tup in self._curr_config_file:
-        print("Sending vector to neighbor: ", tup[0])
+        print("Sending distance vector to neighbor: ", tup[0])
         port = _ToPort(tup[0])
         print("At port: ", port)
         bytes_sent = sock.sendto(msg, ('localhost', port))
@@ -269,55 +269,61 @@ class Router:
     """
     Updates the router's forwarding table based on some distance vector either from config_file or neighbor.
     Returns a list of entries that were changed; otherwise None
-    :param dist_vector: List of Tuples (id_no, cost)
+    :param dist_vector: List of Tuples (id_no, cost), also could be None
     :return: List of Tuples (id, next_hop, cost)
     """
-    # TODO: add print statements
-    print("Updating forwarding table with neighbor DV.........")
-    acc_fwd_tbl = []
-    fwd_tbl = self._forwarding_table.snapshot()
-    print("Current Fwd Table: ", fwd_tbl)
-    neighbor = self.get_source_node(dist_vector)
-    if neighbor:
-      print("We have a distance vector from neighbor: ", neighbor)
-      for dv_entry in dist_vector:
-        fwd_tbl_entry = self.is_dest_in_fwd_tbl(dv_entry, fwd_tbl)
-        if fwd_tbl_entry:
-          updated_entry = self.is_cost_lt_fwd_tbl_entry(dv_entry,fwd_tbl_entry, neighbor)
-          if updated_entry:
-            updated_entry = self.calc_min_cost(neighbor, dv_entry, fwd_tbl)
-            acc_fwd_tbl = self.update_fwd_tbl_with_new_entry(updated_entry, acc_fwd_tbl)
+    if dist_vector:
+        print("Updating forwarding table with neighbor DV.........")
+        acc_fwd_tbl = []
+        fwd_tbl = self._forwarding_table.snapshot()
+        print("Current Fwd Table: ", fwd_tbl)
+        neighbor = self.get_source_node(dist_vector)
+        if neighbor:
+          print("We have a distance vector from neighbor: ", neighbor)
+          for dv_entry in dist_vector:
+            fwd_tbl_entry = self.is_dest_in_fwd_tbl(dv_entry, fwd_tbl)
+            if fwd_tbl_entry:
+              updated_entry = self.is_cost_lt_fwd_tbl_entry(dv_entry,fwd_tbl_entry, neighbor)
+              if updated_entry:
+                updated_entry = self.calc_min_cost(neighbor, dv_entry, fwd_tbl)
+                acc_fwd_tbl = self.update_fwd_tbl_with_new_entry(updated_entry, acc_fwd_tbl)
+            else:
+              acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(dv_entry, neighbor, acc_fwd_tbl)
         else:
-          acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(dv_entry, neighbor, acc_fwd_tbl)
+          print("We have the most-up-to-date config file.")
+        #   for fwd_tbl_entry in fwd_tbl:
+        #     updated_entry = self.is_dest_in_dist_vector(fwd_tbl_entry, dist_vector)
+        #     if updated_entry:
+        #       acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(updated_entry, updated_entry[0], acc_fwd_tbl)
+        #     else:
+        #       acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(fwd_tbl_entry, fwd_tbl_entry[1], acc_fwd_tbl)
+        #
+        # self.overwrite_fwd_tbl(acc_fwd_tbl)
+        # print("Forwarding table has been updated.", '\n')
+        # return self._forwarding_table.__str__()
     else:
-      for fwd_tbl_entry in fwd_tbl:
-        updated_entry = self.is_dest_in_dist_vector(fwd_tbl_entry, dist_vector)
-        if updated_entry:
-          acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(updated_entry, updated_entry[0], acc_fwd_tbl)
-        else:
-          acc_fwd_tbl = self.add_new_entry_to_fwd_tbl(fwd_tbl_entry, fwd_tbl_entry[1], acc_fwd_tbl)
+      print("No distance vector given.", '\n')
 
-    self.overwrite_fwd_tbl(acc_fwd_tbl)
-    print("Forwarding table has been updated.", '\n')
-    return self._forwarding_table.__str__()
-
-  def is_dest_in_dist_vector(fwd_tbl_entry, dist_vector):
+  # TODO implement all helper methods
+  def is_dest_in_dist_vector(self, fwd_tbl_entry, dist_vector):
     """
 
-    :param dist_vector:
+    :param dist_vector: List of Tuples
     :return: The entry in dist_vector if found or None
     """
     pass
 
   def get_source_node(self, dist_vector):
     """
-
     :param dist_vector:
     :return: An integer representing a source node OR none
     """
-    pass
+    ret = list(filter(lambda x: x[1] == 0, dist_vector))
+    if len(ret) == 1:
+      return ret[0][0]
+    else:
+      return None
 
-  # TODO implement all helper methods
   def is_dest_in_fwd_tbl(self, dv_entry, fwd_tbl):
     """
 
@@ -325,6 +331,7 @@ class Router:
     :param fwd_tbl:
     :return: None or a fwd_tbl_entry, which is a Tuple (dest, hop, cost)
     """
+    
     pass
 
   def is_cost_lt_fwd_tbl_entry(self, dv_entry, fwd_tbl_entry, neighbor):
