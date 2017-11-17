@@ -141,16 +141,15 @@ class Router:
     config_dict = self.config_to_dict(f)
     acc = []
     for el in fwd_tbl:
-      entry_cost = el[2]
       if el[0] in config_dict:
-        config_entry_cost = config_dict[el[0]]
-        if config_entry_cost < el[2]:
-          print("Our config file has a cheaper cost for one of its neighbors: ", config_entry_cost)
-          acc.append((el[0], el[0], config_entry_cost))
+        if el[0] == el[1]:
+          print("We have a direct neighbor", el[0], el[1])
+          acc.append((el[0], el[0], config_dict[el[0]]))
         else:
+          print("We have a neighbor but the indirect way is cheaper", el[0], el[1], el[2])
           acc.append(el)
       else:
-        acc.append(el) # adding the source node itself
+        acc.append(el) # adding the source node itself or other indirect nodes
     print("Updating fwd tbl to..............", acc)
     self._forwarding_table.reset(acc)
     self.update_curr_config_file(config_dict)  # this should always match the current config_file
