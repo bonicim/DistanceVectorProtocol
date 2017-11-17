@@ -185,11 +185,13 @@ class Router:
     snapshot = self._forwarding_table.snapshot()
     entry_count = len(snapshot)
     msg.extend(struct.pack("!h", entry_count))
+    list_msg = []
     for entry in snapshot:
       dest, next_hop, cost = entry
       if dest == next_hop:
-        # print("dest, hop, cost", dest, next_hop, cost)
+        list_msg.append((dest, cost))
         msg.extend(struct.pack("!hh", dest, cost))
+    print("Msg to be sent: ", list_msg)
     return msg
 
   def send_dist_vector_to_neighbors(self, msg):
