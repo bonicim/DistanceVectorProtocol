@@ -76,24 +76,26 @@ class Router:
     self.check_for_msg()
     print("Sending Updated DV after checking for neighbor update messages.....")
     self.send_update_msg()
+    print()
+    print("END OF EXECUTION..............ROUTER CALLING FUNCTION AGAIN..............")
+    print()
+    time.sleep(2)
 
   def init_router_id(self, router_id):
     if not self._router_id: # this only happens once when this function is called for the first time
       print("Binding socket to localhost and port: ", _ToPort(router_id), "..............", "\n")
       self._socket.bind(('localhost', _ToPort(router_id)))
       self._router_id = router_id
-    else:
-      print("Router already initialized.")
 
   def init_fwd_tbl(self, f):
-    print("Initializing forwarding table..............", '\n')
+    print("Initializing forwarding table..............")
     if not self.is_fwd_table_initialized():
       self.initialize_fwd_table(f)
     else:
-      print("Forwarding table already initialized.")
-      print("Updating fwd tbl with most current config file.......")
+      print("Forwarding table already initialized.", '\n')
+      print("Updating fwd tbl with most current config file..............")
       self.update_fwd_tbl_with_config_file(f)
-    print("Sending initialized/updated fwd tbl to neighbors via UDP......")
+    print("Sending initialized/updated fwd tbl to neighbors via UDP..............")
     self.send_dist_vector_to_neighbors(self.convert_fwd_table_to_bytes_msg())
 
   def is_fwd_table_initialized(self):
@@ -111,11 +113,10 @@ class Router:
       snapshot.append((self._router_id, self._router_id, 0))  # add source node to forwarding table
     else:
       print("WE SHOULD NOT SEE THIS MSG BECAUSE FWD TABLE MUST BE EMPTY WHEN INITIALIZING")
-
     with self._lock:
       for line in self._curr_config_file:
-        print("Adding neighbor ", line[0], " with cost of ", line[1])
         snapshot.append((int(line[0]), int(line[0]), int(line[1])))
+    print("This is router: ", self._router_id)
     print("The forwarding table will be initialized to: ", snapshot, '\n')
     self._forwarding_table.reset(snapshot)
 
@@ -124,36 +125,32 @@ class Router:
     :param config_file: The config file for the given router
     :return: void
     """
-    print("Initializing current config file.....")
+    print()
+    print("Initializing current config file..............")
     with self._lock:
       for line in config_file:
         line = line.strip('\n').split(',')
         tup = (int(line[0]), int(line[1]))
-        print("Adding line to _curr_config_file: ", tup)
         self._curr_config_file.append(tup)
-      print("The current config file shows the following neighbor and cost: ", self._curr_config_file, '\n')
+      print("The current config file shows the following neighbor and cost: ", self._curr_config_file)
 
   def update_fwd_tbl_with_config_file(self, f):
     fwd_tbl = self._forwarding_table.snapshot()
     config_dict = self.config_to_dict(f)
-    # only update if cost is cheaper
     acc = []
     for el in fwd_tbl:
-      print("Current entry in fwd tbl: ", el)
       entry_cost = el[2]
       if el[0] in config_dict:
         config_entry_cost = config_dict[el[0]]
         if config_entry_cost < el[2]:
-          print("Our config file has a cheaper cost: ", config_entry_cost)
+          print("Our config file has a cheaper cost for one of its neighbors: ", config_entry_cost)
           acc.append((el[0], el[0], config_entry_cost))
         else:
-          print("Fwd tbl does not change")
           acc.append(el)
       else:
-        acc.append(el)
-    print("Updating fwd tbl to: ", acc)
+        acc.append(el) # adding the source node itself
+    print("Updating fwd tbl to..............", acc)
     self._forwarding_table.reset(acc)
-    print("Updating curr_config_file", '\n')
     self.update_curr_config_file(config_dict)  # this should always match the current config_file
 
   def config_to_dict(self, config_file):
@@ -180,17 +177,10 @@ class Router:
     """
     msg = bytearray()
     snapshot = self._forwarding_table.snapshot()
-    print("Converting forwarding table into a bytes object: ", snapshot)
     entry_count = len(snapshot)
-    print("The number of entries is: ", entry_count)
     msg.extend(struct.pack("!h", entry_count))
     for entry in snapshot:
-      print("Adding destination: ", entry[0], " with cost of: ", entry[2])
-      dest = entry[0]
-      cost = entry[2]
-      msg.extend(struct.pack("!hh", dest, cost))
-    if msg:
-      print("Fwd table has been converted to bytes msg: ", msg)
+      msg.extend(struct.pack("!hh", entry[0], entry[2]))
     return msg
 
   def send_dist_vector_to_neighbors(self, msg):
@@ -207,13 +197,13 @@ class Router:
         port = _ToPort(tup[0])
         print("Sending distance vector to neighbor and port: ", tup[0], " ", port)
         sock.sendto(msg, ('localhost', port))
+    print()
     sock.close()
 
   def check_for_msg(self):
-    print('\n', "Listening for new DV updates from neighbors.............")
+    print("Listening for new DV updates from neighbors.............")
     msg = self.rcv_dist_vector()
     if msg is not None:
-      print("Msg from neighbor is: ", msg)
       self.update_fwd_table(msg)
     else:
       print("Fwd tbl NOT updated because router has not received any DV msg's from neighbors.", '\n')
@@ -250,13 +240,13 @@ class Router:
     :param dist_vector: List of Tuples (id_no, cost), also could be None
     :return: List of Tuples (id, next_hop, cost)
     """
-    print("Updating forwarding table with neighbor DV.........")
     try:
       neighbor = self.get_source_node(dist_vector)
+      print("Msg from neighbor is: ", dist_vector)
       print("We have a distance vector from neighbor: ", neighbor)
       acc_fwd_tbl = []
       fwd_tbl = self.fwd_tbl_to_dict(self._forwarding_table.snapshot())
-      print("Current Fwd Table: ", fwd_tbl)
+      print("Current Fwd Table: ", fwd_tbl, '\n')
       neighbor_cost = fwd_tbl[neighbor][1]
       for dv_entry in dist_vector:
         final_dest = dv_entry[0]
@@ -266,28 +256,28 @@ class Router:
           fwd_tbl_next_hop, fwd_tbl_cost = fwd_tbl[final_dest]
           print("Running Bellman Ford Algorithm for shortest path to: ", final_dest)
           if dv_entry_cost == 0:
-            print("This is the neighbor; ignore the cost update.")
+            print("This is the neighbor; ignore the cost update.", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           elif fwd_tbl_cost == 0:
-            print("This is the actual node. The cost is 0; ignore.")
+            print("This is the actual node. The cost is 0; ignore.", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           elif fwd_tbl_cost < dv_entry_cost:
-            print("No update needed. Current cost is still cheaper")
+            print("No update needed. Current cost is still cheaper", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           elif fwd_tbl_cost < dest_cost_via_neighbor:
-            print("No update needed. Current cost is still cheaper")
+            print("No update needed. Current cost is still cheaper", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           else:
-            print("We have a newer and cheaper route via the neighbor", dest_cost_via_neighbor)
+            print("We have a newer and cheaper route via the neighbor", dest_cost_via_neighbor, '\n')
             acc_fwd_tbl.append((final_dest, neighbor, dest_cost_via_neighbor))
         else:
           print("We have a new dest.", final_dest)
           new_entry = (final_dest, neighbor, dest_cost_via_neighbor)
-          print("Adding new entry to fwd tbl: ", new_entry)
+          print("Adding new entry to fwd tbl: ", new_entry, '\n')
           acc_fwd_tbl.append(new_entry)
-      print("Updating fwd table to: ", acc_fwd_tbl)
-      self._forwarding_table.reset(acc_fwd_tbl)
 
+      print("Updating fwd table to: ", acc_fwd_tbl, '\n')
+      self._forwarding_table.reset(acc_fwd_tbl)
     except:
       print("We should not see this message because the distance vector must come from a neighbor.")
       print("Ideally the router should still keep processing")
@@ -307,10 +297,9 @@ class Router:
     return {x[0]: (x[1], x[2]) for x in fwd_tbl}
 
   def send_update_msg(self):
-    print("Converting forwarding table to bytes msg............")
     msg = self.convert_fwd_table_to_bytes_msg()
     if msg:
-      print("Conversion succeeded; sending forwarding table to neighbors.........")
+      print("Sending DV to neighbors.........")
       self.send_dist_vector_to_neighbors(msg)
     else:
       print("We should never see this output. No message sent. The program must send periodic messages.")
