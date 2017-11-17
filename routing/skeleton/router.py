@@ -72,12 +72,11 @@ class Router:
     """
     assert os.path.isfile(self._config_filename)
     print('\n')
-    print("Processing router's configuration file..............")
-    print("CALL COUNTER:", self._call_counter, "..............", '\n')
-    self._call_counter +=1
     with open(self._config_filename, 'r') as f:
       router_id = int(f.readline().strip())
-      print("Router id: ", router_id, '\n')
+      print("Router id: ", router_id)
+      print("CALL COUNTER:", self._call_counter, "..............")
+      self._call_counter += 1
       self.init_router_id(router_id)
       self.init_fwd_tbl(f)
     self.check_for_msg()
@@ -85,15 +84,15 @@ class Router:
     self.send_update_msg()
     print()
     print("THIS IS THE CURRENT FORWARDING TABLE OF ROUTER ", self._router_id)
-    print(self._forwarding_table.snapshot(), '\n')
+    print(self._forwarding_table.snapshot())
     elapsed = time.time() - self._start_time
-    print("Elapsed time since start of router: ", elapsed, '\n')
+    print("Elapsed time since start of router: ", elapsed)
     print("END OF EXECUTION..............ROUTER CALLING FUNCTION AGAIN..............")
     print()
 
   def init_router_id(self, router_id):
     if not self._router_id: # this only happens once when this function is called for the first time
-      print("Binding socket to localhost and port: ", _ToPort(router_id), "..............", "\n")
+      print("Binding socket to localhost and port: ", _ToPort(router_id), "..............")
       self._socket.bind(('localhost', _ToPort(router_id)))
       self._router_id = router_id
 
@@ -102,7 +101,7 @@ class Router:
     if not self.is_fwd_table_initialized():
       self.initialize_fwd_table(f)
     else:
-      print("Forwarding table already initialized.", '\n')
+      print("Forwarding table already initialized.")
       print("Updating fwd tbl with most current config file..............")
       self.update_fwd_tbl_with_config_file(f)
     print("Sending initialized/updated fwd tbl to neighbors via UDP..............")
@@ -126,8 +125,7 @@ class Router:
     with self._lock:
       for line in self._curr_config_file:
         snapshot.append((int(line[0]), int(line[0]), int(line[1])))
-    print("This is router: ", self._router_id)
-    print("The forwarding table will be initialized to: ", snapshot, '\n')
+    print("The forwarding table will be initialized to: ", snapshot)
     self._forwarding_table.reset(snapshot)
 
   def initialize_curr_config_file(self, config_file):
@@ -135,14 +133,13 @@ class Router:
     :param config_file: The config file for the given router
     :return: void
     """
-    print()
     print("Initializing current config file..............")
     with self._lock:
       for line in config_file:
         line = line.strip('\n').split(',')
         tup = (int(line[0]), int(line[1]))
         self._curr_config_file.append(tup)
-      print("The current config file shows the following neighbor and cost: ", self._curr_config_file)
+      # print("The current config file shows the following neighbor and cost: ", self._curr_config_file)
 
   def update_fwd_tbl_with_config_file(self, f):
     fwd_tbl = self._forwarding_table.snapshot()
@@ -151,10 +148,10 @@ class Router:
     for el in fwd_tbl:
       if el[0] in config_dict:
         if el[0] == el[1]:
-          print("We have a direct neighbor", el[0], el[1])
+          # print("We have a direct neighbor", el[0], el[1])
           acc.append((el[0], el[0], config_dict[el[0]]))
         else:
-          print("We have a neighbor but the indirect way is cheaper", el[0], el[1], el[2])
+          # print("We have a neighbor but the indirect way is cheaper", el[0], el[1], el[2])
           acc.append(el)
       else:
         acc.append(el) # adding the source node itself or other indirect nodes
@@ -189,8 +186,10 @@ class Router:
     entry_count = len(snapshot)
     msg.extend(struct.pack("!h", entry_count))
     for entry in snapshot:
-      # TODO: This is where you fix count to infinity problem by advertising a Big Number
-      msg.extend(struct.pack("!hh", entry[0], entry[2]))
+      dest, next_hop, cost = entry
+      if dest == next_hop:
+        # print("dest, hop, cost", dest, next_hop, cost)
+        msg.extend(struct.pack("!hh", dest, cost))
     return msg
 
   def send_dist_vector_to_neighbors(self, msg):
@@ -208,7 +207,6 @@ class Router:
         port = _ToPort(tup[0])
         print("Sending distance vector to neighbor and port: ", tup[0], " ", port)
         sock.sendto(msg, ('localhost', port))
-    print()
     sock.close()
 
   def check_for_msg(self):
@@ -217,7 +215,7 @@ class Router:
     if msg is not None:
       self.update_fwd_table(msg)
     else:
-      print("Fwd tbl NOT updated because router has not received any DV msg's from neighbors.", '\n')
+      print("No DV msg received. Fwd table not updated.")
 
   def rcv_dist_vector(self):
     """
@@ -253,18 +251,19 @@ class Router:
     """
     try:
       neighbor = self.get_source_node(dist_vector)
-      print("Msg from neighbor is: ", dist_vector)
-      print("We have a distance vector from neighbor: ", neighbor)
+      print("Received update msg from neighbor: ", neighbor)
+      print("Update msg: ", dist_vector)
       acc_fwd_tbl = []
-      fwd_tbl = self.fwd_tbl_to_dict(self._forwarding_table.snapshot())
-      print("Current Fwd Table: ", fwd_tbl, '\n')
-      neighbor_cost = fwd_tbl[neighbor][1]
+      fwd_tbl = self._forwarding_table.snapshot()
+      fwd_tbl_dict = self.fwd_tbl_to_dict(fwd_tbl)
+      print("Current Fwd Table: ", fwd_tbl)
+      neighbor_cost = fwd_tbl_dict[neighbor][1]
       for dv_entry in dist_vector:
         final_dest = dv_entry[0]
         dv_entry_cost = dv_entry[1]
         dest_cost_via_neighbor = dv_entry_cost + neighbor_cost
-        if final_dest in fwd_tbl:
-          fwd_tbl_next_hop, fwd_tbl_cost = fwd_tbl[final_dest]
+        if final_dest in fwd_tbl_dict:
+          fwd_tbl_next_hop, fwd_tbl_cost = fwd_tbl_dict[final_dest]
           # print("Running Bellman Ford Algorithm for shortest path to: ", final_dest)
           if dv_entry_cost == 0:
             # print("This is the neighbor; ignore the cost update.", '\n')
@@ -287,7 +286,7 @@ class Router:
           # print("Adding new entry to fwd tbl: ", new_entry, '\n')
           acc_fwd_tbl.append(new_entry)
 
-      print("Updating fwd table to: ", acc_fwd_tbl, '\n')
+      print("Updated Fwd Table: ", acc_fwd_tbl)
       self._forwarding_table.reset(acc_fwd_tbl)
     except:
       print("We should not see this message because the distance vector must come from a neighbor.")
