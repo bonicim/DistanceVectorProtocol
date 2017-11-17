@@ -77,6 +77,8 @@ class Router:
     print("Sending Updated DV after checking for neighbor update messages.....")
     self.send_update_msg()
     print()
+    print("THIS IS THE CURRENT FORWARDING TABLE OF ROUTER ", self._router_id)
+    print(self._forwarding_table.snapshot(), '\n')
     print("END OF EXECUTION..............ROUTER CALLING FUNCTION AGAIN..............")
     print()
     time.sleep(2)
