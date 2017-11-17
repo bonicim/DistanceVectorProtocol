@@ -6,6 +6,7 @@ import util
 import struct
 import select
 import time
+import math
 
 
 _CONFIG_UPDATE_INTERVAL_SEC = 5
@@ -40,11 +41,14 @@ class Router:
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self._lock = threading.Lock()
     self._curr_config_file = []  # a list of neighbors and cost [(2,4), (3,4)]
+    self._start_time = None
+    self._call_counter = 1
 
   def start(self):
     # Start a periodic closure to update config.
     self._config_updater = util.PeriodicClosure(
         self.load_config, _CONFIG_UPDATE_INTERVAL_SEC)
+    self._start_time = time.time()
     self._config_updater.start()
     # TODO: init and start other threads.
     while True: pass
@@ -67,21 +71,25 @@ class Router:
     :return: None
     """
     assert os.path.isfile(self._config_filename)
-    print("Processing router's configuration file...")
+    print('\n')
+    print("Processing router's configuration file..............")
+    print("CALL COUNTER:", self._call_counter, "..............", '\n')
+    self._call_counter +=1
     with open(self._config_filename, 'r') as f:
       router_id = int(f.readline().strip())
       print("Router id: ", router_id, '\n')
       self.init_router_id(router_id)
       self.init_fwd_tbl(f)
     self.check_for_msg()
-    print("Sending Updated DV after checking for neighbor update messages.....")
+    print("Sending Updated DV after checking for neighbor update messages..............")
     self.send_update_msg()
     print()
     print("THIS IS THE CURRENT FORWARDING TABLE OF ROUTER ", self._router_id)
     print(self._forwarding_table.snapshot(), '\n')
+    elapsed = time.time() - self._start_time
+    print("Elapsed time since start of router: ", elapsed, '\n')
     print("END OF EXECUTION..............ROUTER CALLING FUNCTION AGAIN..............")
     print()
-    time.sleep(2)
 
   def init_router_id(self, router_id):
     if not self._router_id: # this only happens once when this function is called for the first time
@@ -181,6 +189,7 @@ class Router:
     entry_count = len(snapshot)
     msg.extend(struct.pack("!h", entry_count))
     for entry in snapshot:
+      # TODO: This is where you fix count to infinity problem by advertising a Big Number
       msg.extend(struct.pack("!hh", entry[0], entry[2]))
     return msg
 
@@ -192,6 +201,7 @@ class Router:
     the entire table.
     :return: None or Error
     """
+    # use math.inf to represent infinity
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     with self._lock:
       for tup in self._curr_config_file:
@@ -255,26 +265,26 @@ class Router:
         dest_cost_via_neighbor = dv_entry_cost + neighbor_cost
         if final_dest in fwd_tbl:
           fwd_tbl_next_hop, fwd_tbl_cost = fwd_tbl[final_dest]
-          print("Running Bellman Ford Algorithm for shortest path to: ", final_dest)
+          # print("Running Bellman Ford Algorithm for shortest path to: ", final_dest)
           if dv_entry_cost == 0:
-            print("This is the neighbor; ignore the cost update.", '\n')
+            # print("This is the neighbor; ignore the cost update.", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           elif fwd_tbl_cost == 0:
-            print("This is the actual node. The cost is 0; ignore.", '\n')
+            # print("This is the actual node. The cost is 0; ignore.", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           elif fwd_tbl_cost < dv_entry_cost:
-            print("No update needed. Current cost is still cheaper", '\n')
+            # print("No update needed. Current cost is still cheaper", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           elif fwd_tbl_cost < dest_cost_via_neighbor:
-            print("No update needed. Current cost is still cheaper", '\n')
+            # print("No update needed. Current cost is still cheaper", '\n')
             acc_fwd_tbl.append((final_dest, fwd_tbl_next_hop, fwd_tbl_cost))
           else:
-            print("We have a newer and cheaper route via the neighbor", dest_cost_via_neighbor, '\n')
+            # print("We have a newer and cheaper route via the neighbor", dest_cost_via_neighbor, '\n')
             acc_fwd_tbl.append((final_dest, neighbor, dest_cost_via_neighbor))
         else:
-          print("We have a new dest.", final_dest)
+          # print("We have a new dest.", final_dest)
           new_entry = (final_dest, neighbor, dest_cost_via_neighbor)
-          print("Adding new entry to fwd tbl: ", new_entry, '\n')
+          # print("Adding new entry to fwd tbl: ", new_entry, '\n')
           acc_fwd_tbl.append(new_entry)
 
       print("Updating fwd table to: ", acc_fwd_tbl, '\n')
