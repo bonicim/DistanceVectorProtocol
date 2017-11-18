@@ -110,20 +110,30 @@ class Router:
   def update_fwd_tbl_with_config_file(self, f):
     print("Updating curr neighbor_cost..............")
     self.update_curr_neighbor_cost(f)  # this should always match the current config_file
-    # fwd_tbl = self._forwarding_table.snapshot()
-    # acc = []
-    # for el in fwd_tbl:
-    #   if el[0] in config_dict:
-    #     if el[0] == el[1]:
-    #       # print("We have a direct neighbor", el[0], el[1])
-    #       acc.append((el[0], el[0], config_dict[el[0]]))
-    #     else:
-    #       # print("We have a neighbor but the indirect way is cheaper", el[0], el[1], el[2])
-    #       acc.append(el)
-    #   else:
-    #     acc.append(el) # adding the source node itself or other indirect nodes
-    # print("Updating fwd tbl to..............", acc)
-    # self._forwarding_table.reset(acc)
+    print("Updating fwd table with current config file")
+    snapshot = self._forwarding_table.snapshot()
+    neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
+    new_snapshot = []
+    link_cost_change_flag = False
+    for route in snapshot:
+      if self.is_neighbor_cost_changed(route, neighbor_cost_dict):
+        new_snapshot.append((route[0], route[1], neighbor_cost_dict[route[0]]))
+        link_cost_change_flag = True
+      else:
+        new_snapshot.append(route)
+    if link_cost_change_flag:
+      print("A neighbor cost has changed.")
+      print("Forwarding table updating to: ")
+      print(new_snapshot)
+    self._forwarding_table.reset(new_snapshot)
+
+  def is_neighbor_cost_changed(self, route, neighbor_cost_dict):
+    return route[0] in neighbor_cost_dict and route[2] != neighbor_cost_dict[route[0]]
+
+  def curr_neighbor_cost_to_dict(self):
+    with self._lock:
+      curr_neighbor_cost = self._curr_neighbor_cost
+    return {x[0]: x[2] for x in curr_neighbor_cost}
 
   def update_curr_neighbor_cost(self, f):
     # only updates the link cost of current neihbors, DOES NOT ADD NEW NEIGHBORS FROM A NEW CONFIG FILE
