@@ -125,7 +125,7 @@ class Router:
       print("A neighbor cost has changed.")
       print("Forwarding table updating to: ")
       print(new_snapshot)
-    self._forwarding_table.reset(new_snapshot)
+      self._forwarding_table.reset(new_snapshot)
 
   def is_neighbor_cost_changed(self, route, neighbor_cost_dict):
     return route[0] in neighbor_cost_dict and route[2] != neighbor_cost_dict[route[0]]
