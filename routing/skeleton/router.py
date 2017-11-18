@@ -170,10 +170,10 @@ class Router:
       if dest == next_hop:
         list_msg.append((dest, cost))
         msg.extend(struct.pack("!hh", dest, cost))
-      else:
-        cost = 42.2
-        list_msg.append((dest, cost))
-        msg.extend(struct.pack("!he", dest, cost))
+      # else:
+      #   cost = 42.2
+      #   list_msg.append((dest, cost))
+      #   msg.extend(struct.pack("!he", dest, cost))
     with self._lock:
       self._last_msg_sent = list_msg
     return msg
@@ -247,8 +247,7 @@ class Router:
       fwd_tbl_org = self._forwarding_table.snapshot()
       fwd_tbl_dict = self.fwd_tbl_to_dict(fwd_tbl_org)
       acc_fwd_tbl = self.remove_dv_dest_fwd_tbl(dist_vector, fwd_tbl_org)
-      with self._lock:
-        neighbor_cost_dict = {x[0]: x[2] for x in self._curr_neighbor_cost}
+      neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
       print("Config cost dict: ", neighbor_cost_dict)
       neighbor_cost = neighbor_cost_dict[neighbor]  # must come from config_file
       print("NEIGHBORCOST:", neighbor_cost)
