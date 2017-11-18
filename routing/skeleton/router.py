@@ -39,7 +39,7 @@ class Router:
     # Socket used to send/recv update messages (using UDP).
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self._lock = threading.Lock()
-    self._curr_neighbor_cost = []  # a list of neighbors and cost [(2,2,9), (3,3,9)]
+    self._curr_neighbor_cost = []  # a list of (neighbors, next hop, cost) example [(1,1,0), (2,2,9), (3,3,9)]
     self._start_time = None
     self._call_counter = 1
     self._last_msg_sent = None
@@ -71,34 +71,16 @@ class Router:
     :return: None
     """
     assert os.path.isfile(self._config_filename)
-    print('\n')
     with open(self._config_filename, 'r') as f:
       router_id = int(f.readline().strip())
-      print("Router id: ", router_id)
-      print("CALL COUNTER:", self._call_counter, "..............")
-      self._call_counter += 1
+      self.greeting(router_id)
       self.init_router_id(router_id)
       self.init_fwd_tbl(f)
       self.update_fwd_tbl_with_config_file(f)
-      print("Sending update msg to neighbors via UDP..............")
       self.send_update_msg_to_neighbors()
     self.check_for_update_msg()
-    print("Finished checking for updated msg from neighbors..........")
-    print("Sending update msg to neighbors via UDP..............")
     self.send_update_msg_to_neighbors()
-    print()
-    print("THIS IS THE CURRENT FORWARDING TABLE OF ROUTER ", self._router_id)
-    print(self._forwarding_table.snapshot())
-    print("THIS IS THE CURRENT CONFIG FILE")
-    with self._lock:
-      print(self._curr_neighbor_cost)
-    with self._lock:
-      print("LAST MESSAGE SENT: ")
-      print(self._last_msg_sent)
-    elapsed = time.time() - self._start_time
-    print("ELAPSED TIME: ", elapsed)
-    print("END OF EXECUTION..............ROUTER CALLING FUNCTION AGAIN..............")
-    print()
+    self.status()
 
   def init_router_id(self, router_id):
     if not self._router_id: # this only happens once when this function is called for the first time
@@ -194,6 +176,7 @@ class Router:
     the entire table.
     :return: None or Error
     """
+    print("Sending update msg to neighbors via UDP..............")
     msg = self.convert_fwd_table_to_bytes_msg()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     with self._lock:
@@ -205,7 +188,7 @@ class Router:
     sock.close()
 
   def check_for_update_msg(self):
-    print("Listening for new DV updates from neighbors.............")
+    print("Listening for distance vector update msg from neighbors.............")
     msg = self.receive_update_msg()
     if msg is not None:
       self.update_fwd_table(msg)
@@ -326,3 +309,22 @@ class Router:
     print(float("inf"))
     return dv_entry_cost == float("inf")
 
+  def greeting(self, router_id):
+    print("Router id: ", router_id)
+    print("CALL COUNTER:", self._call_counter, "..............")
+    self._call_counter += 1
+
+  def status(self):
+    print()
+    print("THIS IS THE CURRENT FORWARDING TABLE OF ROUTER ", self._router_id)
+    print(self._forwarding_table.snapshot())
+    print("THIS IS THE CURRENT CONFIG FILE")
+    with self._lock:
+      print(self._curr_neighbor_cost)
+    with self._lock:
+      print("LAST MESSAGE SENT: ")
+      print(self._last_msg_sent)
+    elapsed = time.time() - self._start_time
+    print("ELAPSED TIME: ", elapsed)
+    print("END OF EXECUTION..............ROUTER CALLING FUNCTION AGAIN..............")
+    print()
