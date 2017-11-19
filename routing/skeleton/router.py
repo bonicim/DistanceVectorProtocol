@@ -100,6 +100,7 @@ class Router:
         self._curr_neighbor_cost.append((self._router_id, self._router_id, 0))
       print("The forwarding table will be initialized to: ", self._curr_neighbor_cost)
       self._forwarding_table.reset(self._curr_neighbor_cost)
+      self.send_update_msg_to_neighbors()
     else:
       print("Forwarding table already initialized.")
       print("Updating fwd tbl with most current config file..............")
@@ -108,27 +109,32 @@ class Router:
     return self._forwarding_table.size() > 0
 
   def update_fwd_tbl_with_config_file(self, f):
-    print("Updating curr neighbor_cost..............")
-    self.update_curr_neighbor_cost(f)  # this should always match the current config_file
-    print("Updating fwd table with current config file")
-    snapshot = self._forwarding_table.snapshot()
-    neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
-    new_snapshot = []
-    link_cost_change_flag = False
-    for route in snapshot:
-      if self.is_neighbor_cost_changed(route, neighbor_cost_dict):
-        new_snapshot.append((route[0], route[1], neighbor_cost_dict[route[0]]))
-        link_cost_change_flag = True
-      else:
-        new_snapshot.append(route)
-    if link_cost_change_flag:
-      print("A neighbor cost has changed.")
-      print("Forwarding table updating to: ")
-      print(new_snapshot)
+    old_curr_neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
+    if self.update_curr_neighbor_cost(f):
+      new_curr_neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
+      snapshot = self._forwarding_table.snapshot()
+      print("Config file change. Detected nieghbor cost change..............")
+      print("Tbl is currently: ", snapshot)
+      new_snapshot = []
+      for route in snapshot:
+        # case 1 direct route changed
+        # dest with
+        dest = route[0]
+        next_hop = route[1]
+        dest_cost = route[2]
+        if self.is_direct_route_cost_changed(route, new_curr_neighbor_cost_dict):
+          new_snapshot.append((dest, next_hop, new_curr_neighbor_cost_dict[dest]))
+        elif self.is_indirect_route_cost_changed(route, old_curr_neighbor_cost_dict, new_curr_neighbor_cost_dict):
+          # some logic here
       self._forwarding_table.reset(new_snapshot)
+      print("Tbl updated to: ", new_snapshot)
 
-  def is_neighbor_cost_changed(self, route, neighbor_cost_dict):
-    return route[0] in neighbor_cost_dict and route[2] != neighbor_cost_dict[route[0]]
+  def is_direct_route_cost_changed(self, route, neighbor_cost_dict):
+    return route[0] in neighbor_cost_dict and route[0] == route[1] and route[2] != neighbor_cost_dict[route[0]]
+
+  def is_indirect_route_cost_changed(self, route, old_curr_link_cost_dict, new_curr_link_cost_dict):
+    # TODO
+  pass
 
   def curr_neighbor_cost_to_dict(self):
     with self._lock:
@@ -138,9 +144,27 @@ class Router:
   def update_curr_neighbor_cost(self, f):
     # only updates the link cost of current neihbors, DOES NOT ADD NEW NEIGHBORS FROM A NEW CONFIG FILE
     # TODO: extend the future to allow adding neighbors to a router via new config files
-    config_dict = self.config_to_dict(f)
+    config_neighbor_cost_dict = self.config_to_dict(f)
+    cost_change = False
     with self._lock:
-      self._curr_neighbor_cost = list(map(lambda x: (x[0], x[0], config_dict[x[0]]) if x[0] in config_dict else x, self._curr_neighbor_cost))
+      curr_neighbor_cost = self._curr_neighbor_cost
+      upd = []
+      snapshot = self._forwarding_table.snapshot()
+      print("Tbl is currently: ", snapshot)
+      new_snapshot = []
+      for neighbor in curr_neighbor_cost:
+        neighbor_id = neighbor[0]
+        neighbor_id_cost = neighbor[2]
+        neighbor_id_config_cost = config_neighbor_cost_dict[neighbor_id]
+        # update the curr config file
+        if neighbor_id in config_neighbor_cost_dict and neighbor_id_cost != neighbor_id_config_cost:
+          cost_change = True
+          upd.append((neighbor_id, neighbor[1], neighbor_id_config_cost))
+        else:
+          upd.append(neighbor)
+      if cost_change:
+        self._curr_neighbor_cost = upd
+    return cost_change
 
   def config_to_dict(self, config_file):
     """
@@ -162,18 +186,15 @@ class Router:
     """
     msg = bytearray()
     snapshot = self._forwarding_table.snapshot()
+    snapshot = list(filter(lambda x: x[0] == x[1], snapshot))
     entry_count = len(snapshot)
     msg.extend(struct.pack("!h", entry_count))
     list_msg = []
     for entry in snapshot:
       dest, next_hop, cost = entry
-      if dest == next_hop:
-        list_msg.append((dest, cost))
-        msg.extend(struct.pack("!hh", dest, cost))
-      # else:
-      #   cost = 42.2
-      #   list_msg.append((dest, cost))
-      #   msg.extend(struct.pack("!he", dest, cost))
+      list_msg.append((dest, cost))
+      msg.extend(struct.pack("!hh", dest, cost))
+    print("Sending: ", list_msg)
     with self._lock:
       self._last_msg_sent = list_msg
     return msg
@@ -193,7 +214,6 @@ class Router:
       for tup in self._curr_neighbor_cost:
         port = _ToPort(tup[0])
         if tup[0] != self._router_id:
-          print("Sending distance vector to neighbor and port: ", tup[0], " ", port)
           sock.sendto(msg, ('localhost', port))
     sock.close()
 
@@ -212,10 +232,13 @@ class Router:
     read, write, err = select.select([self._socket], [], [], 3)
     if read:
       msg, addr = read[0].recvfrom(_MAX_UPDATE_MSG_SIZE)
+      print("RECEVIED MESSAGE: ")
       entry_count = int.from_bytes(msg[0:_START_INDEX], byteorder='big')
+      print("LENGTH: ", entry_count)
       dist_vector = []
       for index in range(_START_INDEX, _ToStop(entry_count), _BYTES_PER_ENTRY):
-        dist_vector.append(self.get_dest_cost(msg, index))
+        tup = self.get_dest_cost(msg, index)
+        dist_vector.append(tup)
       return dist_vector
     else:
       return None
@@ -229,8 +252,6 @@ class Router:
     """
     dest = int.from_bytes(msg[index:index + _MOVE_TWO_BYTES], byteorder='big')
     cost = int.from_bytes(msg[index + _MOVE_TWO_BYTES:index + _MOVE_FOUR_BYTES], byteorder='big')
-    if cost == 42.2:
-      cost = float("inf")
     return dest, cost
 
   def update_fwd_table(self, dist_vector):
@@ -243,43 +264,45 @@ class Router:
     try:
       neighbor = self.get_source_node(dist_vector)
       print("Received update msg from neighbor: ", neighbor)
-      print("Update msg: ", dist_vector)
-      fwd_tbl_org = self._forwarding_table.snapshot()
-      fwd_tbl_dict = self.fwd_tbl_to_dict(fwd_tbl_org)
-      acc_fwd_tbl = self.remove_dv_dest_fwd_tbl(dist_vector, fwd_tbl_org)
-      neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
-      print("Config cost dict: ", neighbor_cost_dict)
-      neighbor_cost = neighbor_cost_dict[neighbor]  # must come from config_file
-      print("NEIGHBORCOST:", neighbor_cost)
+      print("mSG: ", dist_vector)
+
+      curr_neighbor_cost_dict = self.curr_neighbor_cost_to_dict()
+      neighbor_cost = curr_neighbor_cost_dict[neighbor]
+      print("Neighbor cost:", neighbor_cost)
+
+      dist_vector = list(filter(lambda x: x[0] != neighbor, dist_vector))
+      dist_vector_dict = self.list_tup_2_ele_to_dict(dist_vector)
+      print("Update msg: ", dist_vector_dict)
+
+      snapshot = self._forwarding_table.snapshot()
+      fwd_tbl_dict = self.fwd_tbl_to_dict()
+      new_snapshot = [route for route in snapshot if route[0] not in dist_vector_dict]
 
       for dv_entry in dist_vector:
-        final_dest = dv_entry[0]
-        print("final dest", final_dest)
-        dv_entry_cost = dv_entry[1]
-        print("dv_entry_cost", dv_entry_cost)
-        updated_entry = None
-        if final_dest == neighbor:
-          print("We are examining the neighbor's cost itself, ignore")
-          updated_entry = (final_dest, fwd_tbl_dict[final_dest][0], fwd_tbl_dict[final_dest][1])
-        elif self.is_infinite_cost(dv_entry_cost):
-          print("Inside infinite loop")
-          updated_entry = (final_dest, final_dest, neighbor_cost_dict[final_dest])
+        dest_dv_cost = neighbor_cost + dv_entry[1]
+        dest = dv_entry[0]
+        if dest not in fwd_tbl_dict:
+          new_snapshot.append((dest, neighbor, dest_dv_cost))
         else:
-          dest_cost_config = neighbor_cost_dict[final_dest]
-          dest_cost_dv = dv_entry_cost + neighbor_cost
-          if dest_cost_dv < dest_cost_config:
-            updated_entry = (final_dest, neighbor, dest_cost_dv)
+          dest_cost = None
+          if dest == fwd_tbl_dict[dest][0]:
+            print("direct link to dest: ")
+            dest_cost = curr_neighbor_cost_dict[dest]
+            if dest_dv_cost <= dest_cost:
+              new_snapshot.append((dest, neighbor, dest_dv_cost))
+            else:
+              new_snapshot.append((dest, dest ,dest_cost))
           else:
-            updated_entry = (final_dest, final_dest, dest_cost_config)
-        if updated_entry is not None:
-          acc_fwd_tbl.append(updated_entry)
-        else:
-          print("This is bad. Entry must be updated.")
-      print("Updated Fwd Table: ", acc_fwd_tbl)
-      self._forwarding_table.reset(acc_fwd_tbl)
+            print("link is via diff neighbor not the source: ")
+            dest_cost = fwd_tbl_dict[dest_cost][1]
+            if dest_dv_cost <= dest_cost:
+              new_snapshot.append((dest, neighbor, dest_dv_cost))
+            else:
+              new_snapshot.append((dest, fwd_tbl_dict[dest][0],dest_cost))
+      print("Updated Fwd Table: ", new_snapshot)
+      self._forwarding_table.reset(new_snapshot)
     except:
       print("We should not see this message because the distance vector must come from a neighbor.")
-      print("Ideally the router should still keep processing")
 
   def get_source_node(self, dist_vector):
     """
@@ -292,31 +315,11 @@ class Router:
     else:
       raise Exception("Router failed to send a complete DV table.")
 
-  def fwd_tbl_to_dict(self, fwd_tbl):
-    return {x[0]: (x[1], x[2]) for x in fwd_tbl}
+  def fwd_tbl_to_dict(self):
+    return {x[0]: (x[1], x[2]) for x in self._forwarding_table.snapshot()}
 
-  def get_list_via_neighbor(self, neighbor, fwd_tbl):
-    ret = []
-    for el in fwd_tbl:
-      if el[0] != neighbor:
-        ret.append(el)
-    return ret
-
-  def remove_dv_dest_fwd_tbl(self, dist_vector, fwd_tbl):
-    dv_dict = self.tup_2_list_to_dict(dist_vector)
-    ret = []
-    for entry in fwd_tbl:
-      if entry[0] not in dv_dict:
-        ret.append(entry)
-    return ret
-
-  def tup_2_list_to_dict(self, curr_config_list):
-    return {x[0]: x[1] for x in curr_config_list}
-
-  def is_infinite_cost(self, dv_entry_cost):
-    print(dv_entry_cost)
-    print(float("inf"))
-    return dv_entry_cost == float("inf")
+  def list_tup_2_ele_to_dict(self, list_tup_2_ele):
+    return {x[0]: x[1] for x in list_tup_2_ele}
 
   def greeting(self, router_id):
     print("Router id: ", router_id)
