@@ -60,6 +60,7 @@ class Router:
 
   def stop(self):
     print("Entering stop")
+    self.status()
     if self._config_updater:
       self._config_updater.stop()
     self._socket.close()
@@ -176,7 +177,16 @@ class Router:
         # Route to direct routers; MUST UPDATE
         else:
           self.update_route(route, old_curr_neighbor_cost_dict, new_curr_neighbor_cost_dict, new_snapshot)
-      self._forwarding_table.reset(new_snapshot)
+      new_snapshot_v2 = []
+      for route in new_snapshot:
+        dest = route[0]
+        # indirect route
+        if dest in new_curr_neighbor_cost_dict and route[0] != route[1]:
+          entry = self.get_updated_indirect_route(route, old_curr_neighbor_cost_dict, new_curr_neighbor_cost_dict)
+          new_snapshot_v2.append(entry)
+        else:
+          new_snapshot_v2.append(route)
+      self._forwarding_table.reset(new_snapshot_v2)
 
   def curr_neighbor_cost_to_dict(self):
     with self._lock:
@@ -245,7 +255,6 @@ class Router:
             next_hop in new_curr_link_cost_dict and
             old_curr_link_cost_dict[next_hop] != new_curr_link_cost_dict[next_hop])
 
-  # TODO: Reconsider its use; not currently used
   def get_updated_indirect_route(self, route, old_curr_link_cost_dict, new_curr_link_cost_dict):
     dest = route[0]
     next_hop = route[1]
@@ -318,14 +327,15 @@ class Router:
         # Evaluate whether current route is better than the route from our neighbor
         # Our current route can be direct or indirect; this cost must come from the fwd table and curr config
         else:
-          if self.is_direct_route(dest, fwd_tbl_dict):
+          if self.is_route_in_fwd_tbl(dest, fwd_tbl_dict):
             self.handle_route(new_route_cost, curr_neighbor_cost_dict[dest], dest, neighbor, dest, new_snapshot)
           elif self.is_indirect_and_not_neighbor_as_hop(fwd_tbl_dict[dest][0], neighbor):
             self.handle_route(new_route_cost, fwd_tbl_dict[dest][1], dest, neighbor, fwd_tbl_dict[dest][0])
-          # Our current route is via neighbor; thus we must update the route to the neighbor
+          # Our current route is via neighbor; thus we must update the route to the neighbor or compare direct
+          elif self.is_direct_route(dest, curr_neighbor_cost_dict):
+            self.handle_route(new_route_cost, curr_neighbor_cost_dict[dest], dest, neighbor, dest, new_snapshot)
           else:
             new_snapshot.append((dest, neighbor, new_route_cost))
-      print("Updated Fwd Table: ", new_snapshot)
       self._forwarding_table.reset(new_snapshot)
     except:
       print("We should not see this message because the distance vector must come from a neighbor.")
@@ -341,11 +351,14 @@ class Router:
     else:
       raise Exception("Router failed to send a complete DV table.")
 
-  def is_direct_route(self, dest, fwd_tbl_dict):
+  def is_route_in_fwd_tbl(self, dest, fwd_tbl_dict):
     return dest == fwd_tbl_dict[dest][0]
 
   def is_indirect_and_not_neighbor_as_hop(self, next_hop, neighbor):
     return next_hop != neighbor
+
+  def is_direct_route(self, dest, curr_neighbor_cost_dict):
+    return dest in curr_neighbor_cost_dict
 
   def handle_route(self, new_route_cost, old_route_cost, dest, neighbor_as_hop, next_hop, new_snapshot):
     if new_route_cost < old_route_cost:
@@ -363,11 +376,5 @@ class Router:
     print("CURRENT FORWARDING TABLE OF ROUTER ", self._router_id)
     print("TABLE SIZE: ", len(self._forwarding_table.snapshot()), '\n')
     print(self._forwarding_table.snapshot(), '\n')
-    # print("THIS IS THE CURRENT CONFIG FILE")
-    # with self._lock:
-    #   print(self._curr_neighbor_cost)
-    # with self._lock:
-      # print("LAST MESSAGE SENT: ")
-      # print(self._last_msg_sent)
     elapsed = time.time() - self._start_time
     print("ELAPSED TIME: ", elapsed, '\n')
